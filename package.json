@@ -1,0 +1,33 @@
+{
+  "name": "mixer-console",
+  "version": "1.0.0",
+  "description": "Apollo Federation Gateway for Nerdy Jukebox",
+  "main": "src/simple-gateway.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/simple-gateway.js",
+    "dev": "node --watch src/simple-gateway.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "apollo",
+    "gateway",
+    "federation",
+    "graphql"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@apollo/gateway": "^2.11.2",
+    "@apollo/server": "^4.12.2",
+    "@graphql-tools/schema": "^10.0.25",
+    "apollo-server-express": "^3.13.0",
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "graphql-subscriptions": "^3.0.0",
+    "graphql-ws": "^5.13.1",
+    "kafkajs": "^2.2.4",
+    "node-fetch": "^3.3.2",
+    "ws": "^8.18.3"
+  }
+}
