@@ -104,7 +104,7 @@ const resolvers = {
     upvoteSong: async (_, { songId }) => {
       await fetchGraphQL(
         'http://localhost:3002/',
-        'mutation UpvoteSongFromGateway($id: String!) { upvoteSong(songId: $id) { songId } }',
+        'mutation UpvoteSongFromGateway($id: ID!) { upvoteSong(songId: $id) { songId } }',
         { id: songId }
       );
       const queue = await fetchGraphQL('http://localhost:3002/', 'query GetQueueForGateway { queue { songId position votes queuedAt } }');
@@ -122,7 +122,7 @@ const resolvers = {
     downvoteSong: async (_, { songId }) => {
       await fetchGraphQL(
         'http://localhost:3002/',
-        'mutation DownvoteSongFromGateway($id: String!) { downvoteSong(songId: $id) { songId } }',
+        'mutation DownvoteSongFromGateway($id: ID!) { downvoteSong(songId: $id) { songId } }',
         { id: songId }
       );
       const queue = await fetchGraphQL('http://localhost:3002/', 'query GetQueueForGateway { queue { songId position votes queuedAt } }');
