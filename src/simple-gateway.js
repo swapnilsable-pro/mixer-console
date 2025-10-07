@@ -84,53 +84,56 @@ const resolvers = {
     queueSong: async (_, { songId }) => {
       const data = await fetchGraphQL(
         QUEUE_SERVICE_URL,
-        'mutation QueueSongFromGateway($id: ID!) { queueSong(songId:$id){ songId } }',
+        'mutation QueueSongFromGateway($id: ID!) { queueSong(songId:$id){ songId, position, votes, queuedAt } }',
         { id: songId }
       );
-      const queue = await fetchGraphQL(QUEUE_SERVICE_URL, 'query GetQueueForGateway { queue { songId position votes queuedAt } }');
+      // The mutation now returns the new queue item, so we don't need to refetch.
+      const newQueueItem = data.queueSong;
+
       const event = {
         type: 'SONG_QUEUED',
-        queue: queue.queue,
-        timestamp: new Date().toISOString(),
+        // We no longer need to send the whole queue, just the song that was affected.
+        // The client can use this to update its state or refetch if needed.
         songId,
+        timestamp: new Date().toISOString(),
         user: 'anonymous'
       };
       eventBus.publishQueueUpdate(event);
-      return queue.queue.find(item => item.songId === songId);
+      return newQueueItem;
     },
     upvoteSong: async (_, { songId }) => {
-      await fetchGraphQL(
+      const data = await fetchGraphQL(
         QUEUE_SERVICE_URL,
-        'mutation UpvoteSongFromGateway($id: ID!) { upvoteSong(songId: $id) { songId } }',
+        'mutation UpvoteSongFromGateway($id: ID!) { upvoteSong(songId: $id) { songId, position, votes, queuedAt } }',
         { id: songId }
       );
-      const queue = await fetchGraphQL(QUEUE_SERVICE_URL, 'query GetQueueForGateway { queue { songId position votes queuedAt } }');
+      const updatedQueueItem = data.upvoteSong;
+
       const event = {
         type: 'SONG_UPVOTED',
-        queue: queue.queue,
-        timestamp: new Date().toISOString(),
         songId,
+        timestamp: new Date().toISOString(),
         user: 'anonymous'
       };
       eventBus.publishQueueUpdate(event);
-      return queue.queue.find(item => item.songId === songId);
+      return updatedQueueItem;
     },
     downvoteSong: async (_, { songId }) => {
-      await fetchGraphQL(
+      const data = await fetchGraphQL(
         QUEUE_SERVICE_URL,
-        'mutation DownvoteSongFromGateway($id: ID!) { downvoteSong(songId: $id) { songId } }',
+        'mutation DownvoteSongFromGateway($id: ID!) { downvoteSong(songId: $id) { songId, position, votes, queuedAt } }',
         { id: songId }
       );
-      const queue = await fetchGraphQL(QUEUE_SERVICE_URL, 'query GetQueueForGateway { queue { songId position votes queuedAt } }');
+      const updatedQueueItem = data.downvoteSong;
+
       const event = {
         type: 'SONG_DOWNVOTED',
-        queue: queue.queue,
-        timestamp: new Date().toISOString(),
         songId,
+        timestamp: new Date().toISOString(),
         user: 'anonymous'
       };
       eventBus.publishQueueUpdate(event);
-      return queue.queue.find(item => item.songId === songId);
+      return updatedQueueItem;
     }
   },
   Subscription: {
@@ -187,8 +190,25 @@ async function start() {
 
   httpServer.listen(4000, () => {
     console.log('🎚️ mixer-console running:');
-    console.log('   HTTP: http://localhost:4000/graphql');
-    console.log('   WS:   ws://localhost:4000/graphql');
+    console.log(`   HTTP: http://localhost:4000/graphql`);
+    console.log(`   WS:   ws://localhost:4000/graphql`);
+  });
+
+  // --- Graceful Shutdown Logic ---
+  const signals = ['SIGINT', 'SIGTERM'];
+  signals.forEach((signal) => {
+    process.on(signal, async () => {
+      console.log(`\n👋 ${signal} received. Shutting down gracefully...`);
+      
+      // 1. Disconnect from Kafka
+      await eventBus.shutdown();
+
+      // 2. Close the HTTP server
+      await new Promise(resolve => httpServer.close(resolve));
+      
+      console.log('✅ Server shut down complete.');
+      process.exit(0);
+    });
   });
 }
 
