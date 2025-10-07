@@ -2,15 +2,8 @@ import express from 'express';
 import { createServer } from 'http';
 import { ApolloServer } from '@apollo/server';
 import { expressMiddleware } from '@apollo/server/express4';
-import { ApolloServerPluginDrainHttpServer } from '@apollo/server/plugin/drainHttpServer';
-import cors from 'cors';
-import fetch from 'node-fetch';
-import { WebSocketServer } from 'ws';
-import { useServer } from 'graphql-ws/lib/use/ws';
 import { PubSub } from 'graphql-subscriptions';
-import { makeExecutableSchema } from '@graphql-tools/schema';
-
-const pubsub = new PubSub();
+import { eventBus } from './event-bus.js';
 
 const typeDefs = `
   type Song {
@@ -90,15 +83,14 @@ const resolvers = {
         { id: songId }
       );
       const queue = await fetchGraphQL('http://localhost:3002/', 'query GetQueueForGateway { queue { songId position votes queuedAt } }');
-      pubsub.publish('QUEUE_UPDATED', {
-        queueUpdated: {
-          type: 'SONG_QUEUED',
-          queue: queue.queue,
-          timestamp: new Date().toISOString(),
-          songId,
-          user: 'anonymous'
-        }
-      });
+      const event = {
+        type: 'SONG_QUEUED',
+        queue: queue.queue,
+        timestamp: new Date().toISOString(),
+        songId,
+        user: 'anonymous'
+      };
+      eventBus.publishQueueUpdate(event);
       return queue.queue.find(item => item.songId === songId);
     },
     upvoteSong: async (_, { songId }) => {
@@ -108,15 +100,14 @@ const resolvers = {
         { id: songId }
       );
       const queue = await fetchGraphQL('http://localhost:3002/', 'query GetQueueForGateway { queue { songId position votes queuedAt } }');
-      pubsub.publish('QUEUE_UPDATED', {
-        queueUpdated: {
-          type: 'SONG_UPVOTED',
-          queue: queue.queue,
-          timestamp: new Date().toISOString(),
-          songId,
-          user: 'anonymous'
-        }
-      });
+      const event = {
+        type: 'SONG_UPVOTED',
+        queue: queue.queue,
+        timestamp: new Date().toISOString(),
+        songId,
+        user: 'anonymous'
+      };
+      eventBus.publishQueueUpdate(event);
       return queue.queue.find(item => item.songId === songId);
     },
     downvoteSong: async (_, { songId }) => {
@@ -126,21 +117,20 @@ const resolvers = {
         { id: songId }
       );
       const queue = await fetchGraphQL('http://localhost:3002/', 'query GetQueueForGateway { queue { songId position votes queuedAt } }');
-      pubsub.publish('QUEUE_UPDATED', {
-        queueUpdated: {
-          type: 'SONG_DOWNVOTED',
-          queue: queue.queue,
-          timestamp: new Date().toISOString(),
-          songId,
-          user: 'anonymous'
-        }
-      });
+      const event = {
+        type: 'SONG_DOWNVOTED',
+        queue: queue.queue,
+        timestamp: new Date().toISOString(),
+        songId,
+        user: 'anonymous'
+      };
+      eventBus.publishQueueUpdate(event);
       return queue.queue.find(item => item.songId === songId);
     }
   },
   Subscription: {
     queueUpdated: {
-      subscribe: () => pubsub.asyncIterableIterator(['QUEUE_UPDATED']),
+      subscribe: () => eventBus.asyncIterator(),
     },
   },
 };
