@@ -1,9 +1,20 @@
-import express from 'express';
-import { createServer } from 'http';
 import { ApolloServer } from '@apollo/server';
 import { expressMiddleware } from '@apollo/server/express4';
-import { PubSub } from 'graphql-subscriptions';
+import { ApolloServerPluginDrainHttpServer } from '@apollo/server/plugin/drainHttpServer';
+import { makeExecutableSchema } from '@graphql-tools/schema';
+import express from 'express';
+import http from 'http';
+import cors from 'cors';
+import fetch from 'node-fetch';
+import { WebSocketServer } from 'ws';
+import { useServer } from 'graphql-ws/lib/use/ws';
 import { eventBus } from './event-bus.js';
+
+// --- Configuration ---
+const {
+  SONGS_SERVICE_URL = 'http://localhost:3001/graphql',
+  QUEUE_SERVICE_URL = 'http://localhost:3002/'
+} = process.env;
 
 const typeDefs = `
   type Song {
@@ -61,28 +72,22 @@ async function fetchGraphQL(url, query, variables) {
 const resolvers = {
   Query: {
     songs: async () => {
-      const data = await fetchGraphQL(
-        'http://localhost:3001/graphql',
-        'query GetSongsForGateway { songs { id title artist duration } }'
-      );
+      const data = await fetchGraphQL(SONGS_SERVICE_URL, '{ songs { id title artist duration } }');
       return data.songs;
     },
     queue: async () => {
-      const data = await fetchGraphQL(
-        'http://localhost:3002/',
-        'query GetQueueForGateway { queue { songId position votes queuedAt } }'
-      );
+      const data = await fetchGraphQL(QUEUE_SERVICE_URL, '{ queue { songId position votes queuedAt } }');
       return data.queue;
     }
   },
   Mutation: {
     queueSong: async (_, { songId }) => {
-      await fetchGraphQL(
-        'http://localhost:3002/',
+      const data = await fetchGraphQL(
+        QUEUE_SERVICE_URL,
         'mutation QueueSongFromGateway($id: ID!) { queueSong(songId:$id){ songId } }',
         { id: songId }
       );
-      const queue = await fetchGraphQL('http://localhost:3002/', 'query GetQueueForGateway { queue { songId position votes queuedAt } }');
+      const queue = await fetchGraphQL(QUEUE_SERVICE_URL, 'query GetQueueForGateway { queue { songId position votes queuedAt } }');
       const event = {
         type: 'SONG_QUEUED',
         queue: queue.queue,
@@ -95,11 +100,11 @@ const resolvers = {
     },
     upvoteSong: async (_, { songId }) => {
       await fetchGraphQL(
-        'http://localhost:3002/',
+        QUEUE_SERVICE_URL,
         'mutation UpvoteSongFromGateway($id: ID!) { upvoteSong(songId: $id) { songId } }',
         { id: songId }
       );
-      const queue = await fetchGraphQL('http://localhost:3002/', 'query GetQueueForGateway { queue { songId position votes queuedAt } }');
+      const queue = await fetchGraphQL(QUEUE_SERVICE_URL, 'query GetQueueForGateway { queue { songId position votes queuedAt } }');
       const event = {
         type: 'SONG_UPVOTED',
         queue: queue.queue,
@@ -112,11 +117,11 @@ const resolvers = {
     },
     downvoteSong: async (_, { songId }) => {
       await fetchGraphQL(
-        'http://localhost:3002/',
+        QUEUE_SERVICE_URL,
         'mutation DownvoteSongFromGateway($id: ID!) { downvoteSong(songId: $id) { songId } }',
         { id: songId }
       );
-      const queue = await fetchGraphQL('http://localhost:3002/', 'query GetQueueForGateway { queue { songId position votes queuedAt } }');
+      const queue = await fetchGraphQL(QUEUE_SERVICE_URL, 'query GetQueueForGateway { queue { songId position votes queuedAt } }');
       const event = {
         type: 'SONG_DOWNVOTED',
         queue: queue.queue,
@@ -139,17 +144,26 @@ const schema = makeExecutableSchema({ typeDefs, resolvers });
 
 async function start() {
   const app = express();
-  const httpServer = createServer(app);
+  const httpServer = http.createServer(app);
 
-  const apollo = new ApolloServer({
+  const server = new ApolloServer({
     schema,
     plugins: [
       ApolloServerPluginDrainHttpServer({ httpServer }),
     ]
   });
 
-  await apollo.start();
-  app.use('/graphql', cors(), express.json(), expressMiddleware(apollo));
+  await server.start();
+
+  // Initialize the event bus (which will connect to Kafka if enabled)
+  await eventBus.start();
+
+  app.use(
+    '/graphql',
+    cors(),
+    express.json(),
+    expressMiddleware(server)
+  );
 
   const wsServer = new WebSocketServer({
     server: httpServer,
